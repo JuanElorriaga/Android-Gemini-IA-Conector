@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Godot Gemini Assistant</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#202531">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">🤖</div>
+      <div class="brand-title">Godot Gemini</div>
+      <span class="brand-badge" id="currentModelBadge">Flash</span>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="openDrawerBtn" title="Arquivos do Projeto">📁</button>
+      <button class="icon-btn" id="openSettingsBtn" title="Configurações e Chave de API">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Project Path & Status Bar -->
+  <section class="project-bar">
+    <div class="project-status">
+      <span class="status-dot" id="projectStatusDot"></span>
+      <span class="project-name" id="projectPathLabel">Nenhum projeto selecionado</span>
+    </div>
+    <button class="select-folder-btn" id="selectFolderBtn">
+      <span>📂</span>
+      <span id="selectFolderBtnText">Abrir Pasta</span>
+    </button>
+  </section>
+
+  <!-- Chat History Feed -->
+  <main class="chat-container" id="chatContainer">
+    <!-- Welcome Screen -->
+    <div class="welcome-card" id="welcomeCard">
+      <div class="welcome-title">
+        <span>🚀</span>
+        <span>Assistente IA para Godot</span>
+      </div>
+      <p class="welcome-desc">
+        Conecte a pasta do seu projeto Godot e use o Gemini para inspecionar, criar scripts GDScript, alterar cenas e tirar dúvidas com texto ou fotos!
+      </p>
+      <div class="quick-prompts">
+        <button class="prompt-chip" data-prompt="Crie um script Player.gd com movimentação 2D suave, pulo e gravidade">
+          <span>🎮</span> Script de movimentação 2D para Player.gd
+        </button>
+        <button class="prompt-chip" data-prompt="Quais arquivos e scripts existem no projeto? Faça um resumo da estrutura">
+          <span>🔍</span> Analisar e listar a estrutura do projeto
+        </button>
+        <button class="prompt-chip" data-prompt="Crie um nó ou script de Timer que dispara um sinal a cada 3 segundos">
+          <span>⏱️</span> Criar script com Timer e sinais
+        </button>
+        <button class="prompt-chip" data-prompt="Como posso otimizar a performance dos nós e colisões no Godot?">
+          <span>⚡</span> Dicas de otimização no Godot
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Chat Input Footer -->
+  <footer class="chat-input-bar">
+    <!-- Image Preview Thumbnail (when selected) -->
+    <div class="image-preview-bar" id="imagePreviewBar">
+      <img id="imagePreviewThumb" class="preview-thumb" src="" alt="Anexo">
+      <span style="font-size: 11px; color: var(--text-muted);">Imagem anexada</span>
+      <button class="remove-img-btn" id="removeImgBtn" title="Remover imagem">✕</button>
+    </div>
+
+    <div class="input-row">
+      <!-- Hidden image input -->
+      <input type="file" id="imageFileInput" accept="image/*" style="display: none;">
+      <button class="action-btn" id="attachImageBtn" title="Anexar foto ou captura de tela">
+        📷
+      </button>
+
+      <textarea 
+        id="promptInput" 
+        class="chat-textarea" 
+        placeholder="Peça para o Gemini criar ou editar arquivos..." 
+        rows="1"
+      ></textarea>
+
+      <button class="action-btn send-btn" id="sendPromptBtn" title="Enviar prompt">
+        ➤
+      </button>
+    </div>
+  </footer>
+
+  <!-- Drawer Backdrop -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <!-- Project Files Drawer -->
+  <aside class="drawer" id="filesDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <span>📂</span>
+        <span>Arquivos do Projeto</span>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button class="icon-btn" id="refreshFilesBtn" style="width: 32px; height: 32px; font-size: 14px;" title="Atualizar">🔄</button>
+        <button class="icon-btn" id="closeDrawerBtn" style="width: 32px; height: 32px; font-size: 14px;">✕</button>
+      </div>
+    </div>
+    <div style="padding: 8px 10px; border-bottom: 1px solid var(--border-color);">
+      <input type="text" id="fileFilterInput" class="form-input" style="padding: 6px 10px; font-size: 12px; width: 100%;" placeholder="Filtrar arquivos (.gd, .tscn)...">
+    </div>
+    <div class="file-tree-container" id="fileTreeContainer">
+      <div style="text-align: center; color: var(--text-dim); padding: 30px 10px; font-size: 12px;">
+        Selecione uma pasta para ver os arquivos aqui
+      </div>
+    </div>
+  </aside>
+
+  <!-- File Viewer Modal -->
+  <div class="modal" id="fileViewerModal">
+    <div class="modal-content" style="max-width: 600px; height: 80vh;">
+      <div class="modal-header">
+        <span style="font-weight: 700; font-size: 13px; font-family: var(--font-mono); color: var(--godot-blue);" id="viewerFileName">res://script.gd</span>
+        <button class="icon-btn" id="closeViewerBtn" style="width: 28px; height: 28px; font-size: 12px;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <pre class="code-content" id="viewerFileContent" style="margin: 0; height: 100%; border-radius: 0;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div style="font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+          <span>⚙️</span> Configurações
+        </div>
+        <button class="icon-btn" id="closeSettingsBtn" style="width: 28px; height: 28px; font-size: 12px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="apiKeyInput">Chave de API do Gemini (Google AI Studio)</label>
+          <input type="password" id="apiKeyInput" class="form-input" placeholder="AIzaSy...">
+          <span class="form-help">
+            Sua chave fica gravada localmente e de forma segura no seu celular. 
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: var(--godot-blue); text-decoration: none;">Obter chave gratuita no Google AI Studio ↗</a>
+          </span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="modelSelect">Modelo Gemini</label>
+          <select id="modelSelect" class="form-select">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Super Rápido & Recomendado)</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Raciocínio Avançado)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Backups Automáticos</label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer;">
+            <input type="checkbox" id="backupToggle" checked style="accent-color: var(--godot-blue);">
+            Criar backup em .gemini_backups/ antes de alterar qualquer arquivo
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="systemPromptInput">Instruções do Sistema (System Instruction)</label>
+          <textarea id="systemPromptInput" class="form-input" rows="4" style="font-size: 12px; resize: vertical;"></textarea>
+          <span class="form-help">Instruções para o Gemini saber como codificar para Godot Engine.</span>
+        </div>
+
+        <button class="save-btn" id="saveSettingsBtn">Salvar Configurações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">Mensagem</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
