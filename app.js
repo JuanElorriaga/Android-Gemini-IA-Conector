@@ -3,7 +3,7 @@
 // Configuration & State
 const STATE = {
   apiKey: localStorage.getItem('gemini_api_key') || '',
-  model: localStorage.getItem('gemini_model') || 'gemini-2.5-flash',
+  model: localStorage.getItem('gemini_model') || 'gemini-3.8-flash',
   backupEnabled: localStorage.getItem('gemini_backup_enabled') !== 'false',
   systemPrompt: localStorage.getItem('gemini_system_prompt') || `Você é um engenheiro sênior e arquiteto especialista em Godot Engine (Godot 4 e Godot 3) e GDScript.
 Você tem acesso às ferramentas locais do projeto para listar arquivos, ler arquivos de código/cenas e criar ou modificar arquivos diretamente na pasta do projeto.
@@ -63,6 +63,8 @@ const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
+const customModelGroup = document.getElementById('customModelGroup');
+const customModelInput = document.getElementById('customModelInput');
 const backupToggle = document.getElementById('backupToggle');
 const systemPromptInput = document.getElementById('systemPromptInput');
 
@@ -80,7 +82,7 @@ function init() {
 
   // Load Settings into form
   apiKeyInput.value = STATE.apiKey;
-  modelSelect.value = STATE.model;
+  applyModelToForm(STATE.model);
   backupToggle.checked = STATE.backupEnabled;
   systemPromptInput.value = STATE.systemPrompt;
 
@@ -93,15 +95,32 @@ function init() {
   setupEventListeners();
 }
 
+function applyModelToForm(modelVal) {
+  const options = Array.from(modelSelect.options).map(o => o.value);
+  if (options.includes(modelVal) && modelVal !== 'custom') {
+    modelSelect.value = modelVal;
+    customModelGroup.style.display = 'none';
+    customModelInput.value = '';
+  } else {
+    modelSelect.value = 'custom';
+    customModelGroup.style.display = 'block';
+    customModelInput.value = modelVal;
+  }
+}
+
 function updateModelBadge() {
-  if (STATE.model.includes('2.5-pro')) {
+  if (STATE.model.includes('4.0-argon') || STATE.model.includes('argon')) {
+    currentModelBadge.textContent = '4.0 Argon';
+  } else if (STATE.model.includes('4.0-flash')) {
+    currentModelBadge.textContent = '4.0 Flash';
+  } else if (STATE.model.includes('3.8-flash')) {
+    currentModelBadge.textContent = '3.8 Flash';
+  } else if (STATE.model.includes('2.5-pro')) {
     currentModelBadge.textContent = '2.5 Pro';
   } else if (STATE.model.includes('2.5-flash')) {
     currentModelBadge.textContent = '2.5 Flash';
-  } else if (STATE.model.includes('1.5-pro')) {
-    currentModelBadge.textContent = '1.5 Pro';
   } else {
-    currentModelBadge.textContent = 'Flash';
+    currentModelBadge.textContent = STATE.model.replace('gemini-', '');
   }
 }
 
@@ -119,10 +138,19 @@ function setupEventListeners() {
   // Settings Modal
   openSettingsBtn.addEventListener('click', () => {
     apiKeyInput.value = STATE.apiKey;
-    modelSelect.value = STATE.model;
+    applyModelToForm(STATE.model);
     backupToggle.checked = STATE.backupEnabled;
     systemPromptInput.value = STATE.systemPrompt;
     settingsModal.style.display = 'flex';
+  });
+
+  modelSelect.addEventListener('change', () => {
+    if (modelSelect.value === 'custom') {
+      customModelGroup.style.display = 'block';
+      customModelInput.focus();
+    } else {
+      customModelGroup.style.display = 'none';
+    }
   });
 
   closeSettingsBtn.addEventListener('click', () => {
@@ -131,7 +159,13 @@ function setupEventListeners() {
 
   saveSettingsBtn.addEventListener('click', () => {
     STATE.apiKey = apiKeyInput.value.trim();
-    STATE.model = modelSelect.value;
+    
+    if (modelSelect.value === 'custom') {
+      STATE.model = customModelInput.value.trim() || 'gemini-3.8-flash';
+    } else {
+      STATE.model = modelSelect.value;
+    }
+
     STATE.backupEnabled = backupToggle.checked;
     STATE.systemPrompt = systemPromptInput.value.trim();
 
@@ -142,7 +176,7 @@ function setupEventListeners() {
 
     updateModelBadge();
     settingsModal.style.display = 'none';
-    showToast('Configurações salvas!');
+    showToast(`Configurações salvas! Modelo: ${STATE.model}`);
   });
 
   // Drawer
