@@ -2,8 +2,11 @@
 
 // Configuration & State
 const STATE = {
+  provider: localStorage.getItem('ai_provider') || 'gemini',
   apiKey: localStorage.getItem('gemini_api_key') || '',
-  model: localStorage.getItem('gemini_model') || 'gemini-3.8-flash',
+  model: localStorage.getItem('gemini_model') || 'gemini-2.5-flash',
+  deepseekApiKey: localStorage.getItem('deepseek_api_key') || '',
+  deepseekModel: localStorage.getItem('deepseek_model') || 'deepseek-chat',
   backupEnabled: localStorage.getItem('gemini_backup_enabled') !== 'false',
   systemPrompt: localStorage.getItem('gemini_system_prompt') || `Você é um engenheiro sênior e arquiteto especialista em Godot Engine (Godot 4 e Godot 3) e GDScript.
 Você tem acesso às ferramentas locais do projeto para listar arquivos, ler arquivos de código/cenas e criar ou modificar arquivos diretamente na pasta do projeto.
@@ -16,6 +19,7 @@ Diretrizes:
   directoryHandle: null,
   filesMap: new Map(), // path -> FileSystemFileHandle
   chatHistory: [], // Full conversation history for Gemini API
+  deepseekHistory: [], // Full conversation history for DeepSeek API
   selectedImage: null, // { mimeType, data (base64), previewUrl }
   isGenerating: false
 };
@@ -61,10 +65,22 @@ const settingsModal = document.getElementById('settingsModal');
 const openSettingsBtn = document.getElementById('openSettingsBtn');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const providerSelect = document.getElementById('providerSelect');
+
+// Gemini Settings elements
+const geminiConfigGroup = document.getElementById('geminiConfigGroup');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
 const customModelGroup = document.getElementById('customModelGroup');
 const customModelInput = document.getElementById('customModelInput');
+
+// DeepSeek Settings elements
+const deepseekConfigGroup = document.getElementById('deepseekConfigGroup');
+const deepseekApiKeyInput = document.getElementById('deepseekApiKeyInput');
+const deepseekModelSelect = document.getElementById('deepseekModelSelect');
+const customDeepseekModelGroup = document.getElementById('customDeepseekModelGroup');
+const customDeepseekModelInput = document.getElementById('customDeepseekModelInput');
+
 const backupToggle = document.getElementById('backupToggle');
 const systemPromptInput = document.getElementById('systemPromptInput');
 
@@ -81,18 +97,36 @@ function init() {
   updateModelBadge();
 
   // Load Settings into form
+  providerSelect.value = STATE.provider;
+  toggleProviderUI(STATE.provider);
+
   apiKeyInput.value = STATE.apiKey;
   applyModelToForm(STATE.model);
+
+  deepseekApiKeyInput.value = STATE.deepseekApiKey;
+  applyDeepseekModelToForm(STATE.deepseekModel);
+
   backupToggle.checked = STATE.backupEnabled;
   systemPromptInput.value = STATE.systemPrompt;
 
   // Prompt for API key if missing
-  if (!STATE.apiKey) {
-    showToast('Insira sua Chave de API do Gemini em Configurações (⚙️)');
+  const currentKey = STATE.provider === 'deepseek' ? STATE.deepseekApiKey : STATE.apiKey;
+  if (!currentKey) {
+    showToast(`Insira sua Chave de API do ${STATE.provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} em Configurações (⚙️)`);
   }
 
   // Setup Event Listeners
   setupEventListeners();
+}
+
+function toggleProviderUI(provider) {
+  if (provider === 'deepseek') {
+    geminiConfigGroup.style.display = 'none';
+    deepseekConfigGroup.style.display = 'block';
+  } else {
+    geminiConfigGroup.style.display = 'block';
+    deepseekConfigGroup.style.display = 'none';
+  }
 }
 
 function applyModelToForm(modelVal) {
@@ -108,19 +142,39 @@ function applyModelToForm(modelVal) {
   }
 }
 
-function updateModelBadge() {
-  if (STATE.model.includes('4.0-argon') || STATE.model.includes('argon')) {
-    currentModelBadge.textContent = '4.0 Argon';
-  } else if (STATE.model.includes('4.0-flash')) {
-    currentModelBadge.textContent = '4.0 Flash';
-  } else if (STATE.model.includes('3.8-flash')) {
-    currentModelBadge.textContent = '3.8 Flash';
-  } else if (STATE.model.includes('2.5-pro')) {
-    currentModelBadge.textContent = '2.5 Pro';
-  } else if (STATE.model.includes('2.5-flash')) {
-    currentModelBadge.textContent = '2.5 Flash';
+function applyDeepseekModelToForm(modelVal) {
+  const options = Array.from(deepseekModelSelect.options).map(o => o.value);
+  if (options.includes(modelVal) && modelVal !== 'custom-deepseek') {
+    deepseekModelSelect.value = modelVal;
+    customDeepseekModelGroup.style.display = 'none';
+    customDeepseekModelInput.value = '';
   } else {
-    currentModelBadge.textContent = STATE.model.replace('gemini-', '');
+    deepseekModelSelect.value = 'custom-deepseek';
+    customDeepseekModelGroup.style.display = 'block';
+    customDeepseekModelInput.value = modelVal;
+  }
+}
+
+function updateModelBadge() {
+  if (STATE.provider === 'deepseek') {
+    if (STATE.deepseekModel === 'deepseek-reasoner') {
+      currentModelBadge.textContent = 'DeepSeek R1';
+    } else if (STATE.deepseekModel === 'deepseek-chat') {
+      currentModelBadge.textContent = 'DeepSeek V3';
+    } else {
+      currentModelBadge.textContent = STATE.deepseekModel.replace('deepseek-', '');
+    }
+    return;
+  }
+
+  // Gemini Badges
+  if (STATE.model.includes('argon')) {
+    currentModelBadge.textContent = '4.0 Argon';
+  } else if (STATE.model.startsWith('gemini-')) {
+    const raw = STATE.model.replace('gemini-', '');
+    currentModelBadge.textContent = raw.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  } else {
+    currentModelBadge.textContent = STATE.model;
   }
 }
 
@@ -137,11 +191,22 @@ function setupEventListeners() {
 
   // Settings Modal
   openSettingsBtn.addEventListener('click', () => {
+    providerSelect.value = STATE.provider;
+    toggleProviderUI(STATE.provider);
+
     apiKeyInput.value = STATE.apiKey;
     applyModelToForm(STATE.model);
+
+    deepseekApiKeyInput.value = STATE.deepseekApiKey;
+    applyDeepseekModelToForm(STATE.deepseekModel);
+
     backupToggle.checked = STATE.backupEnabled;
     systemPromptInput.value = STATE.systemPrompt;
     settingsModal.style.display = 'flex';
+  });
+
+  providerSelect.addEventListener('change', () => {
+    toggleProviderUI(providerSelect.value);
   });
 
   modelSelect.addEventListener('change', () => {
@@ -153,30 +218,51 @@ function setupEventListeners() {
     }
   });
 
+  deepseekModelSelect.addEventListener('change', () => {
+    if (deepseekModelSelect.value === 'custom-deepseek') {
+      customDeepseekModelGroup.style.display = 'block';
+      customDeepseekModelInput.focus();
+    } else {
+      customDeepseekModelGroup.style.display = 'none';
+    }
+  });
+
   closeSettingsBtn.addEventListener('click', () => {
     settingsModal.style.display = 'none';
   });
 
   saveSettingsBtn.addEventListener('click', () => {
+    STATE.provider = providerSelect.value;
     STATE.apiKey = apiKeyInput.value.trim();
     
     if (modelSelect.value === 'custom') {
-      STATE.model = customModelInput.value.trim() || 'gemini-3.8-flash';
+      STATE.model = customModelInput.value.trim() || 'gemini-2.5-flash';
     } else {
       STATE.model = modelSelect.value;
+    }
+
+    STATE.deepseekApiKey = deepseekApiKeyInput.value.trim();
+    if (deepseekModelSelect.value === 'custom-deepseek') {
+      STATE.deepseekModel = customDeepseekModelInput.value.trim() || 'deepseek-chat';
+    } else {
+      STATE.deepseekModel = deepseekModelSelect.value;
     }
 
     STATE.backupEnabled = backupToggle.checked;
     STATE.systemPrompt = systemPromptInput.value.trim();
 
+    localStorage.setItem('ai_provider', STATE.provider);
     localStorage.setItem('gemini_api_key', STATE.apiKey);
     localStorage.setItem('gemini_model', STATE.model);
+    localStorage.setItem('deepseek_api_key', STATE.deepseekApiKey);
+    localStorage.setItem('deepseek_model', STATE.deepseekModel);
     localStorage.setItem('gemini_backup_enabled', STATE.backupEnabled);
     localStorage.setItem('gemini_system_prompt', STATE.systemPrompt);
 
     updateModelBadge();
     settingsModal.style.display = 'none';
-    showToast(`Configurações salvas! Modelo: ${STATE.model}`);
+    const activeModelName = STATE.provider === 'deepseek' ? STATE.deepseekModel : STATE.model;
+    showToast(`Configurações salvas! Provedor: ${STATE.provider.toUpperCase()} (${activeModelName})`);
   });
 
   // Drawer
@@ -613,7 +699,49 @@ const GEMINI_TOOLS = [
   }
 ];
 
-// Execute Gemini Tool Call
+// DeepSeek Tool Definitions (OpenAI-compatible schema)
+const OPENAI_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'list_project_files',
+      description: 'Lista todos os arquivos existentes dentro do projeto Godot conectado.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_project_file',
+      description: 'Lê o conteúdo em texto de um arquivo do projeto Godot (ex: scripts .gd, cenas .tscn, project.godot).',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'O caminho relativo do arquivo no projeto, ex: "Player.gd"' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_project_file',
+      description: 'Cria ou sobrescreve um arquivo diretamente na pasta do projeto Godot com o código fornecido.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'O caminho do arquivo a ser criado ou atualizado no projeto' },
+          content: { type: 'string', description: 'O código GDScript ou texto completo a ser salvo no arquivo' },
+          reason: { type: 'string', description: 'Explicação breve do que foi adicionado ou modificado' }
+        },
+        required: ['path', 'content']
+      }
+    }
+  }
+];
+
+// Execute Tool Call (Common for both Gemini & DeepSeek)
 async function executeToolCall(call) {
   const name = call.name;
   const args = call.args || {};
@@ -641,17 +769,25 @@ async function handleSendPrompt() {
 
   if (!promptText && !imageAttachment) return;
 
-  if (!STATE.apiKey) {
-    showToast('Por favor, informe sua chave de API nas Configurações (⚙️)');
+  const isDeepSeek = STATE.provider === 'deepseek';
+  const activeKey = isDeepSeek ? STATE.deepseekApiKey : STATE.apiKey;
+  const providerTitle = isDeepSeek ? 'DeepSeek' : 'Gemini';
+
+  if (!activeKey) {
+    showToast(`Por favor, informe sua chave de API do ${providerTitle} nas Configurações (⚙️)`);
     openSettingsBtn.click();
     return;
+  }
+
+  if (isDeepSeek && imageAttachment) {
+    showToast('Aviso: O DeepSeek suporta prompts de texto e código. A imagem será ignorada.');
   }
 
   if (STATE.isGenerating) return;
 
   // Build user message parts
   const userParts = [];
-  if (imageAttachment) {
+  if (imageAttachment && !isDeepSeek) {
     userParts.push({
       inlineData: {
         mimeType: imageAttachment.mimeType,
@@ -664,7 +800,7 @@ async function handleSendPrompt() {
   }
 
   // Display user message in UI
-  appendChatMessage('user', promptText, { image: imageAttachment ? imageAttachment.previewUrl : null });
+  appendChatMessage('user', promptText, { image: (imageAttachment && !isDeepSeek) ? imageAttachment.previewUrl : null });
 
   // Clear inputs
   promptInput.value = '';
@@ -672,19 +808,30 @@ async function handleSendPrompt() {
   clearSelectedImage();
 
   // Add to conversation history
-  STATE.chatHistory.push({
-    role: 'user',
-    parts: userParts
-  });
+  if (isDeepSeek) {
+    if (STATE.deepseekHistory.length === 0) {
+      STATE.deepseekHistory.push({ role: 'system', content: STATE.systemPrompt });
+    }
+    STATE.deepseekHistory.push({ role: 'user', content: promptText });
+  } else {
+    STATE.chatHistory.push({
+      role: 'user',
+      parts: userParts
+    });
+  }
 
-  // Call Gemini Agent Loop
+  // Call Agent Loop
   setLoadingState(true);
 
   try {
-    await runAgentLoop();
+    if (isDeepSeek) {
+      await runDeepSeekLoop();
+    } else {
+      await runGeminiLoop();
+    }
   } catch (err) {
-    console.error('Erro na requisição Gemini:', err);
-    appendChatMessage('assistant', `⚠️ **Erro na comunicação com o Gemini:** ${err.message}`);
+    console.error(`Erro na requisição ${providerTitle}:`, err);
+    appendChatMessage('assistant', `⚠️ **Erro na comunicação com o ${providerTitle}:** ${err.message}`);
   } finally {
     setLoadingState(false);
   }
@@ -696,8 +843,8 @@ function setLoadingState(loading) {
   sendPromptBtn.innerHTML = loading ? '<span style="display:inline-block; animation: spin 1s linear infinite;">⏳</span>' : '➤';
 }
 
-// Run Multi-turn Agent Loop (handles tool calls & responses)
-async function runAgentLoop() {
+// Run Gemini Agent Loop
+async function runGeminiLoop() {
   let continueTurn = true;
   let maxTurns = 5; // Prevent runaway loops
 
@@ -714,15 +861,55 @@ async function runAgentLoop() {
       tools: GEMINI_TOOLS
     };
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
+    // Retry loop for temporary Google spikes / high demand (503 / 429)
+    let response;
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastErrorMsg = '';
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      throw new Error(errJson.error?.message || `Status HTTP ${response.status}`);
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (response.ok) {
+          break;
+        }
+
+        const errJson = await response.json().catch(() => ({}));
+        lastErrorMsg = errJson.error?.message || `Status HTTP ${response.status}`;
+
+        const isOverloaded = response.status === 503 || 
+                             response.status === 429 || 
+                             lastErrorMsg.toLowerCase().includes('demand') ||
+                             lastErrorMsg.toLowerCase().includes('quota');
+
+        if (isOverloaded && attempts < maxAttempts) {
+          showToast(`Servidor da Google em alta demanda. Tentando novamente (${attempts}/${maxAttempts})...`);
+          await new Promise(r => setTimeout(r, 2000 * attempts));
+          continue;
+        } else {
+          break;
+        }
+      } catch (networkErr) {
+        lastErrorMsg = networkErr.message;
+        if (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (!response || !response.ok) {
+      if (lastErrorMsg.toLowerCase().includes('demand') || (response && response.status === 503)) {
+        throw new Error(`Os servidores do Google estão com pico de tráfego temporário no modelo **${STATE.model}**.\n\n💡 **Dica rápida:** Toque em ⚙️ (Configurações) no topo e selecione **Gemini 2.5 Flash** ou alterne para o **DeepSeek**, que possui alta estabilidade.`);
+      }
+      throw new Error(lastErrorMsg);
     }
 
     const data = await response.json();
@@ -766,6 +953,107 @@ async function runAgentLoop() {
       continueTurn = true;
     } else {
       // Finished final reply
+      continueTurn = false;
+    }
+  }
+}
+
+// Run DeepSeek Agent Loop
+async function runDeepSeekLoop() {
+  let continueTurn = true;
+  let maxTurns = 5;
+
+  while (continueTurn && maxTurns > 0) {
+    maxTurns--;
+
+    const endpoint = 'https://api.deepseek.com/chat/completions';
+    const supportsTools = STATE.deepseekModel !== 'deepseek-reasoner';
+
+    const requestBody = {
+      model: STATE.deepseekModel,
+      messages: STATE.deepseekHistory
+    };
+
+    if (supportsTools) {
+      requestBody.tools = OPENAI_TOOLS;
+    }
+
+    let response;
+    let attempts = 0;
+    const maxAttempts = 3;
+    let lastErrorMsg = '';
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${STATE.deepseekApiKey}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (response.ok) break;
+
+        const errJson = await response.json().catch(() => ({}));
+        lastErrorMsg = errJson.error?.message || `Status HTTP ${response.status}`;
+
+        if ((response.status === 429 || response.status === 503) && attempts < maxAttempts) {
+          showToast(`DeepSeek com alta demanda. Tentando novamente (${attempts}/${maxAttempts})...`);
+          await new Promise(r => setTimeout(r, 2000 * attempts));
+          continue;
+        }
+        break;
+      } catch (e) {
+        lastErrorMsg = e.message;
+        if (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw new Error(`Erro na API do DeepSeek: ${lastErrorMsg}`);
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0];
+    const message = choice?.message;
+
+    if (!message) {
+      throw new Error('Resposta vazia recebida do DeepSeek.');
+    }
+
+    STATE.deepseekHistory.push(message);
+
+    if (message.content) {
+      appendChatMessage('assistant', message.content);
+    }
+
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      for (const toolCall of message.tool_calls) {
+        const fnName = toolCall.function.name;
+        let fnArgs = {};
+        try {
+          fnArgs = JSON.parse(toolCall.function.arguments);
+        } catch (e) {
+          fnArgs = {};
+        }
+
+        const toolResult = await executeToolCall({ name: fnName, args: fnArgs });
+
+        STATE.deepseekHistory.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolResult)
+        });
+      }
+      continueTurn = true;
+    } else {
       continueTurn = false;
     }
   }
